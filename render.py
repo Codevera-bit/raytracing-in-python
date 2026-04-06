@@ -1,9 +1,12 @@
 import math
+import os
 import random
 import time
 import datetime
 from functools import partial
 from multiprocessing import Pool, cpu_count
+from numba import jit
+from progress import _load_checkpoint, _save_checkpoint
 
 import numpy as np
 from PIL import Image
@@ -39,23 +42,26 @@ def ray_col(r: Ray, bg_col: V3, world: Hittable, depth: int) -> V3:
     
     return vec_add(emitted, vec_mul(attenuation, ray_col(scattered, bg_col, world, depth - 1)))
 
-
 # Multiprocessing task
-def render_scanline(scanline: list, world: HittableList, cam: Camera, bg_col: V3, samples: int, wt: int, ht: int, max_depth: int):
+def render_scanline(scanline: list, world, cam, bg_col, samples: int, wt: int, ht: int, max_depth: int):
     j = scanline[0]
     rendered_scanline = []
 
     for i in scanline[1:]:
-        # Sample and write 
-        sampled_col_sum = V3(0, 0, 0)
+        sampled_col_sum = [0.0, 0.0, 0.0]
         for _ in range(samples):
             u = (i + random.random()) / (wt - 1)
-            v = (j + random.random()) / (ht - 1)
-            sampled_col_sum = vec_add(sampled_col_sum, ray_col(cam.get_ray(u, v), bg_col, world, max_depth))
+            v = (ht - 1 - j + random.random()) / (ht - 1)
+            ray_color = ray_col(cam.get_ray(u, v), bg_col, world, max_depth)
+            sampled_col_sum[0] += ray_color.x
+            sampled_col_sum[1] += ray_color.y
+            sampled_col_sum[2] += ray_color.z
 
-        rendered_scanline.append(compute_rgb_from_sample_sum(sampled_col_sum, samples))
+        sampled_v3 = V3(sampled_col_sum[0], sampled_col_sum[1], sampled_col_sum[2])
+        rendered_scanline.append(compute_rgb_from_sample_sum(sampled_v3, samples))
 
-    return rendered_scanline
+    return j, rendered_scanline
+
 
 def render_scene(world: HittableList, camera: Camera, settings: Settings):
     samples = settings.samples
@@ -64,35 +70,53 @@ def render_scene(world: HittableList, camera: Camera, settings: Settings):
     bg_col = settings.bg_col
     max_depth = settings.max_depth
 
-    print("Setting up...")
-    coord_image = []
-    for j in range(ht - 1, -1, -1):
-        scanline = [j]
-        for i in range(wt):
-            scanline.append(i)
-        coord_image.append(scanline)
+    print('Setting up...')
+    image_data, done = _load_checkpoint(settings, ht, wt)
 
-    ntasks = len(coord_image)
-    nprocs = cpu_count()
-    image_data = []
-    print("Done.")
+    remaining = [j for j in range(ht) if not done[j]]
+    if not remaining:
+        print('Checkpoint already complete. Skipping render section.')
+    else:
+        coord_image = [[j] + list(range(wt)) for j in remaining]
+        ntasks = len(coord_image)
+        nprocs = cpu_count()
 
-    print("\nRendering...")
-    print(f'Render progress: 0.00%', end='\r')
-    start = time.time()
-    with Pool(nprocs) as p:
-        # Makeshift "starmap" using imap and partial (so that progress can still be tracked and constant params are set)
-        m = p.imap(partial(render_scanline, world=world, cam=camera, bg_col=bg_col, samples=samples, wt=wt, ht=ht, max_depth=max_depth), coord_image)
-        for i, sl in enumerate(m, 1):
-            print(f'Render progress: {i / ntasks:.2%}   ', end='\r')
-            image_data.append(sl)
-    dt = time.time() - start
+        print(f'Done loading. {done.sum()} / {ht} rows already completed.')
+        print('\nRendering...')
+        start = time.time()
 
-    print("\nDone.")
-    print(f"Render time ({nprocs} procs): {str(datetime.timedelta(seconds=dt))}")
+        with Pool(nprocs) as p:
+            m = p.imap_unordered(partial(render_scanline, world=world, cam=camera, bg_col=bg_col, samples=samples, wt=wt, ht=ht, max_depth=max_depth), coord_image)
+            completed = int(done.sum())
+            print(f'Render progress: {completed / ht:.2%}', end='\r')
+            for sl in m:
+                j, row = sl
+                image_data[j] = np.array(row, dtype=np.uint8)
+                done[j] = True
+                completed += 1
 
-    print("\nSaving image...")
-    image = Image.fromarray(np.array(image_data, dtype=np.uint8))
-    image.save(f'out.png')
-    print("Done.")
-    image.show()
+                if completed % settings.checkpoint_interval == 0 or completed == ht:
+                    _save_checkpoint(settings, image_data, done)
+
+                print(f'Render progress: {completed / ht:.2%}   ', end='\r')
+
+        dt = time.time() - start
+        print('\nDone.')
+        print(f'Render time ({nprocs} procs): {str(datetime.timedelta(seconds=dt))}')
+
+    # Final save; if still in checkpoint mode, optionally keep checkpoint
+    print('\nSaving image...')
+    image = Image.fromarray(image_data)
+    image.save(settings.output_path)
+    print(f'Done. Saved {settings.output_path}')
+
+    if settings.checkpoint_enabled and os.path.exists(settings.checkpoint_path):
+        if done.all():
+            print(f'Render completed. Checkpoint file remains: {settings.checkpoint_path}')
+        else:
+            print('Render aborted early, checkpoint saved for resume.')
+
+    try:
+        image.show()
+    except Exception as e:
+        print(f'Note: Could not open image viewer ({e}), but image was saved successfully.')

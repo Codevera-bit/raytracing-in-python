@@ -1,71 +1,92 @@
 import math
 import random
+import numpy as np
 
 class V3:
-    def __init__(self, x: float, y: float, z: float) -> None:
-        self.x = x
-        self.y = y
-        self.z = z
+    def __init__(self, x, y=None, z=None):
+        if y is None and z is None:
+            if hasattr(x, '__iter__') and not isinstance(x, str):
+                self.data = np.array(x, dtype=float)
+            else:
+                self.data = np.array([x, x, x], dtype=float)
+        else:
+            self.data = np.array([x, y, z], dtype=float)
 
-    def __getitem__(self, idx: int) -> float:
-        if idx == 0:
-            return self.x
-        if idx == 1:
-            return self.y
-        if idx == 2:
-            return self.z
-        raise IndexError
+    @property
+    def x(self):
+        return self.data[0]
 
-    def neg(self) -> object:
-        return V3(-self.x, -self.y, -self.z)
+    @x.setter
+    def x(self, value):
+        self.data[0] = value
 
-    def len_sqr(self) -> float:
-        return self.x * self.x + self.y * self.y + self.z * self.z
+    @property
+    def y(self):
+        return self.data[1]
 
-    def len(self) -> float:
-        return math.sqrt(self.len_sqr())
+    @y.setter
+    def y(self, value):
+        self.data[1] = value
 
-    def near_zero(self) -> bool:
+    @property
+    def z(self):
+        return self.data[2]
+
+    @z.setter
+    def z(self, value):
+        self.data[2] = value
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+    def neg(self):
+        return V3(-self.data)
+
+    def len_sqr(self):
+        return np.sum(self.data ** 2)
+
+    def len(self):
+        return np.sqrt(self.len_sqr())
+
+    def near_zero(self):
         s = 1e-8
-        return (math.fabs(self.x) < s) and (math.fabs(self.y) < s) and (math.fabs(self.z) < s)
+        return np.all(np.abs(self.data) < s)
 
-    def __str__(self) -> str:
+    def __str__(self):
         return f"({self.x}, {self.y}, {self.z})"
 
 def vec_add(u: V3, v: V3) -> V3:
-    return V3(u.x + v.x, u.y + v.y, u.z + v.z)
+    return V3(u.data + v.data)
 
 def vec_sub(u: V3, v: V3) -> V3:
-    return V3(u.x - v.x, u.y - v.y, u.z - v.z)
+    return V3(u.data - v.data)
 
 def vec_mul(u: V3, v: V3) -> V3:
-    return V3(u.x * v.x, u.y * v.y, u.z * v.z)
+    return V3(u.data * v.data)
 
 def vec_smul(v: V3, t: float) -> V3:
-    return V3(t * v.x, t * v.y, t * v.z)
+    return V3(t * v.data)
 
 def vec_sdiv(v: V3, t: float) -> V3:
-    return vec_smul(v, 1 / t)
+    return V3(v.data / t)
 
 def vec_dot(u: V3, v: V3) -> float:
-    return u.x * v.x + u.y * v.y + u.z * v.z
+    return np.sum(u.data * v.data)
 
 def vec_cross(u: V3, v: V3) -> V3:
-    return V3(u.y * v.z - u.z * v.y,
-                u.z * v.x - u.x * v.z,
-                u.x * v.y - u.y * v.x)
+    return V3(np.cross(u.data, v.data))
 
 def vec_unit(v: V3) -> V3:
-    return vec_sdiv(v, v.len())
+    return V3(v.data / v.len())
 
 def vec_rand() -> V3:
-    return V3(random.random(), random.random(), random.random())
+    return V3(np.random.random(3))
 
 def vec_rand_between(min: float, max: float) -> V3:
-    return V3(random.uniform(min, max), random.uniform(min, max), random.uniform(min, max))
+    return V3(np.random.uniform(min, max, 3))
 
 def vec_rand_in_unit_sphere() -> V3:
-    while 1:
+    while True:
         p = vec_rand_between(-1, 1)
         if p.len_sqr() >= 1:
             continue
@@ -75,8 +96,9 @@ def vec_rand_unit_in_unit_sphere() -> V3:
     return vec_unit(vec_rand_in_unit_sphere())
 
 def vec_rand_in_unit_disk() -> V3:
-    while 1:
-        p = V3(random.uniform(-1, 1), random.uniform(-1, 1), 0)
+    while True:
+        p = V3(np.random.uniform(-1, 1, 3))
+        p.data[2] = 0
         if p.len_sqr() >= 1:
             continue
         return p

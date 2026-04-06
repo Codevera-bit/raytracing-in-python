@@ -10,7 +10,7 @@ from aarect import *
 from box import *
 from constantmedium import *
 from bvh import *
-
+from transform import *
 random.seed(1234)
 
 def scattered_spheres() -> tuple[HittableList, Camera]:
@@ -58,6 +58,57 @@ def scattered_spheres() -> tuple[HittableList, Camera]:
     world.add(Sphere(V3(4, 1, 0), 1.0, material3))
     
     return world, None
+
+
+# def simple_scene() -> tuple[HittableList, Camera]:
+#     world = HittableList()
+
+
+#     light = DiffuseLight(SolidColourTex(V3(7, 7, 7)))
+#     world.add(XZrect(123, 423, 147, 412, 554, light))
+
+#     albedo = SolidColourTex(V3(20, 0, 0))
+
+#     world.add(Sphere(V3(220, 280, 300), 80, Lambertian(albedo)))
+#     world.add(Sphere(V3(260, 150, 45), 50, Dielectric(1.5)))
+
+#     lookat = V3(278, 278, 0)
+#     lookfrom = V3(478, 278, -600)
+#     cam = Camera(lookfrom, lookat, V3(0, 1, 0), 40, 1, 0.0, vec_sub(lookat, lookfrom).len(), 0, 1)
+
+#     return world, cam
+
+def simple_scene() -> tuple[HittableList, Camera]:
+    world = HittableList()
+
+    # 1. Stronger, broader overhead light to fill the scene
+    # Using a slightly larger area (200x200) so soft shadows resolve faster
+    light_mat = DiffuseLight(SolidColourTex(V3(15, 15, 15)))
+    world.add(XZrect(150, 350, 150, 350, 554, light_mat))
+
+    # 2. Add a simple white floor/back-wall for light bounces
+    # This prevents rays from escaping into the "void" (darkness)
+    white = Lambertian(SolidColourTex(V3(0.73, 0.73, 0.73)))
+    world.add(XZrect(0, 555, 0, 555, 0, white))   # Floor
+    world.add(XYrect(0, 555, 0, 555, 555, white)) # Back Wall
+
+    # 3. Subject Spheres - Adjusted Albedo
+    # Pure 20 is "glowing" red; 0.7 is a bright, realistic red
+    red_mat = Lambertian(SolidColourTex(V3(0.7, 0.1, 0.1)))
+    world.add(Sphere(V3(190, 90, 190), 90, red_mat))
+    
+    # Glass sphere - Dielectrics are cheap for CPUs if depth is low
+    world.add(Sphere(V3(380, 70, 120), 70, Dielectric(1.5)))
+
+    # 4. Camera setup
+    lookat = V3(278, 278, 0)
+    lookfrom = V3(278, 278, -800) # Centered for better composition
+    
+    # Focus on the red sphere for a nice bokeh effect even at low samples
+    dist_to_focus = 700 
+    cam = Camera(lookfrom, lookat, V3(0, 1, 0), 35, 1, 0.05, dist_to_focus, 0, 1)
+
+    return world, cam
 
 def two_spheres() -> tuple[HittableList, Camera]:
     world = HittableList()

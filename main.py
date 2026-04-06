@@ -8,15 +8,21 @@ from render import render_scene
 def main():
     # Image
     aspect_ratio = 1.0
-    image_wt = 800
+    image_wt = 400
     image_ht = int(image_wt / aspect_ratio)
-    samples_per_pixel = 500
-    max_depth = 1000
+    samples_per_pixel = 5 # recommended: 100 or more for good quality, but this is just for testing
+    max_depth = 5 # recommended: 50 or more for good quality, but this is just for testing
     bg_col = V3(0, 0, 0)
-    s = Settings(image_wt, image_ht, bg_col, samples_per_pixel, max_depth)
+    
+    # Decide whether to start from last checkpoint
+    use_checkpoint =  False # Set to False to start fresh
+    
+    s = Settings(image_wt, image_ht, bg_col, samples_per_pixel, max_depth, use_checkpoint)
 
     # World
-    world, cam = artwork()
+    world, cam = simple_scene()
+    if cam is None:
+        cam = Camera(V3(0,0,-5), V3(0,0,0), V3(0,1,0), 90, 1, 0, 5, 0, 1)
 
     render_scene(world, cam, s)
 
